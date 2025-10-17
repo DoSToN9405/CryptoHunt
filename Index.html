@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CryptoHunt — Угадай символ!</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      line-height: 1.6;
+      padding: 16px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    header {
+      text-align: center;
+      margin: 20px 0;
+    }
+    h1 {
+      font-size: 28px;
+      color: #0f172a;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      margin: 16px 0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    h2 {
+      font-size: 20px;
+      margin-bottom: 16px;
+      color: #334155;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 14px;
+      margin: 8px 0;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover:not(:disabled) {
+      background: #2563eb;
+    }
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    #status, #log {
+      padding: 12px;
+      border-radius: 10px;
+      margin-top: 12px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    .info { background: #dbeafe; color: #1e40af; }
+    .success { background: #dcfce7; color: #166534; }
+    .error { background: #fee2e2; color: #b91c1c; }
+    #log {
+      background: #f1f5f9;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔐 CryptoHunt</h1>
+      <p>Зашифруй символ — пусть другие попробуют угадать!</p>
+    </header>
+
+    <div class="card">
+      <h2>1. Загадай символ</h2>
+      <input type="text" id="secretInput" placeholder="1 символ: A, 7, 🚀 и т.д." maxlength="1" />
+      <select id="algoSelect">
+        <option value="xor">XOR (быстро)</option>
+        <option value="caesar">Caesar (+3)</option>
+        <option value="base64">Base64 (для эмодзи)</option>
+      </select>
+      <button onclick="startGame()">Начать игру</button>
+      <div id="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Угадай символ</h2>
+      <button id="huntBtn" onclick="huntSecret()" disabled>Искать секрет</button>
+      <div id="log">Дождитесь начала игры...</div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK через CDN (compat-режим) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+  <script>
+    // 🔑 Твоя Firebase-конфигурация
+    const firebaseConfig = {
+      apiKey: "AIzaSyC9cSHIMOY0qTuvuezfP72vqlm_KUJlqsk",
+      authDomain: "cryptohunt-game.firebaseapp.com",
+      projectId: "cryptohunt-game",
+      storageBucket: "cryptohunt-game.firebasestorage.app",
+      messagingSenderId: "834306593429",
+      appId: "1:834306593429:web:8a4aa5141c0640315b419c",
+      measurementId: "G-1XJ763TYH7"
+    };
+
+    // Инициализация Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const gameRef = db.ref('currentGame');
+
+    let isHunting = false;
+
+    // === ШИФРОВАНИЕ ===
+    function encrypt(char, algo) {
+      if (algo === 'xor') {
+        return (char.charCodeAt(0) ^ 137).toString();
+      } else if (algo === 'caesar') {
+        return String.fromCharCode(char.charCodeAt(0) + 3);
+      } else if (algo === 'base64') {
+        return btoa(unescape(encodeURIComponent(char)));
+      }
+      return char;
+    }
+
+    function getCharSet() {
+      const chars = [];
+      for (let i = 32; i <= 126; i++) chars.push(String.fromCodePoint(i)); // ASCII
+      const emojis = ['🚀', '₿', '🦊', '💡', '🔐', '🎉', '😎', '🧠', '⚡', '🔥', '❤️', '👍'];
+      return [...new Set([...chars, ...emojis])]; // уникальные
+    }
+
+    // === ИГРА ===
+    async function startGame() {
+      const secret = document.getElementById('secretInput').value.trim();
+      const algo = document.getElementById('algoSelect').value;
+      if (secret.length !== 1) {
+        showStatus('⚠️ Введите ровно один символ!', 'error');
+        return;
+      }
+
+      const encrypted = encrypt(secret, algo);
+      await gameRef.set({
+        encrypted: encrypted,
+        algorithm: algo,
+        startedAt: Date.now(),
+        solved: false
+      });
+
+      showStatus(`✅ Игра началась! Шифр: ${encrypted}`, 'info');
+      document.getElementById('huntBtn').disabled = false;
+      document.getElementById('log').innerText = 'Готов к поиску...';
+    }
+
+    async function huntSecret() {
+      if (isHunting) return;
+      isHunting = true;
+
+      const logEl = document.getElementById('log');
+      const gameSnap = await gameRef.once('value');
+      const game = gameSnap.val();
+
+      if (!game || game.solved) {
+        logEl.innerText = '❌ Игра уже завершена.';
+        isHunting = false;
+        return;
+      }
+
+      const charset = getCharSet();
+      const start = Date.now();
+      logEl.innerText = '🔍 Начинаю перебор...';
+
+      for (let i = 0; i < charset.length; i++) {
+        const char = charset[i];
+        let matches = false;
+
+        if (game.algorithm === 'xor') {
+          const guess = encrypt(char, 'xor');
+          matches = (guess === game.encrypted);
+        } else if (game.algorithm === 'caesar') {
+          const guess = encrypt(char, 'caesar');
+          matches = (guess === game.encrypted);
+        } else if (game.algorithm === 'base64') {
+          try {
+            const decoded = decodeURIComponent(escape(atob(game.encrypted)));
+            matches = (decoded === char);
+          } catch (e) { /* ignore */ }
+        }
+
+        if (matches) {
+          const time = Date.now() - start;
+          logEl.innerHTML = `🎉 Найдено за ${time} мс!<br>Секрет: <strong>${char}</strong>`;
+          await gameRef.update({ solved: true, winner: 'Игрок', secret: char });
+          isHunting = false;
+          return;
+        }
+
+        // Обновляем лог каждые 100 символов
+        if (i % 100 === 0) {
+          logEl.innerText = `Проверено: ${i} / ${charset.length}...`;
+        }
+
+        // Отдаём управление браузеру
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      logEl.innerText = '❌ Символ не найден в наборе.';
+      isHunting = false;
+    }
+
+    function showStatus(text, type) {
+      const el = document.getElementById('status');
+      el.innerText = text;
+      el.className = type;
+    }
+
+    // Слушаем, если кто-то выиграл
+    gameRef.on('value', (snapshot) => {
+      const game = snapshot.val();
+      const btn = document.getElementById('huntBtn');
+      if (game && game.solved) {
+        btn.disabled = true;
+        document.getElementById('log').innerHTML = 
+          `🏆 Игра окончена!<br>Секрет: <strong>${game.secret}</strong>`;
+      }
+    });
+  </script>
+</body>
+</html>

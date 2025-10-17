@@ -1,209 +1,115 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CryptoHunt — Числовая охота</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hash Miner</title>
   <style>
     body {
-      font-family: system-ui, sans-serif;
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 16px;
-      background: #f8fafc;
-      color: #1e293b;
-    }
-    h1, h2 { margin: 16px 0; }
-    .card {
-      background: white;
-      padding: 16px;
-      border-radius: 12px;
-      margin: 16px 0;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }
-    input, button {
-      width: 100%;
-      padding: 12px;
-      margin: 8px 0;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #ffffff;
+      color: #222222;
+      margin: 0;
+      padding: 20px;
       font-size: 16px;
     }
-    button {
-      background: #3b82f6;
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .balance { font-size: 24px; font-weight: bold; }
+    .level { color: #4caf50; margin-top: 5px; }
+    .card {
+      background: #f0f0f0;
+      padding: 16px;
+      border-radius: 12px;
+      margin: 12px 0;
+    }
+    .miner-type {
+      font-weight: bold;
+      color: #1c93e3;
+    }
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+    }
+    .btn {
+      background: #3c903c;
       color: white;
       border: none;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    button:hover { background: #2563eb; }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
-    #chat {
-      height: 250px;
-      overflow-y: auto;
-      background: white;
       padding: 12px;
       border-radius: 8px;
-      border: 1px solid #e2e8f0;
+      width: 100%;
+      font-size: 16px;
+      margin-top: 10px;
+      cursor: pointer;
     }
-    .msg { margin: 8px 0; padding: 6px; border-radius: 6px; }
-    .puzzle { background: #dbeafe; }
-    .win { background: #dcfce7; font-weight: bold; }
-    #balance { font-size: 20px; font-weight: bold; color: #2563eb; }
+    .reward { margin-top: 15px; font-weight: bold; }
   </style>
 </head>
 <body>
-  <h1>🔐 CryptoHunt</h1>
-  <div>Баланс: <span id="balance">0</span> токенов</div>
-
-  <div class="card">
-    <h2>Загадай число (до 5 цифр)</h2>
-    <input type="number" id="secret" placeholder="Например: 12345" min="0" max="99999" />
-    <button onclick="createPuzzle()">Отправить в чат</button>
+  <div class="header">
+    <div class="balance">+2000</div>
+    <div>+5</div>
+    <div class="level">Lvl 1</div>
   </div>
 
   <div class="card">
-    <h2>Чат</h2>
-    <div id="chat">Подключение к игре...</div>
+    <div class="miner-type">SLIM</div>
+    <div class="stats">
+      <span>min 300</span>
+      <span>max 500</span>
+      <span>~45.9%</span>
+    </div>
   </div>
 
-  <!-- Firebase SDK (compat mode) -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <div class="card">
+    <div class="miner-type">BASIC</div>
+    <div class="stats">
+      <span>min 500</span>
+      <span>max 1,000</span>
+      <span>~33.6%</span>
+    </div>
+  </div>
 
+  <div class="card">
+    <div class="miner-type">PRO</div>
+    <div class="stats">
+      <span>min 1,000</span>
+      <span>max 2,000</span>
+      <span>~16.7%</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="miner-type">PRO MAX</div>
+    <div class="stats">
+      <span>type SLIM</span>
+      <span>time 60 min</span>
+      <span>~2.6%</span>
+    </div>
+    <div class="stats">
+      <span>type BASIC</span>
+      <span>time 120 min</span>
+      <span>~1.2%</span>
+    </div>
+  </div>
+
+  <div class="reward">Tokens to receive: 0</div>
+  <button class="btn">Start Mining</button>
+
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
-    // === ТВОЯ FIREBASE КОНФИГУРАЦИЯ ===
-    const firebaseConfig = {
-      apiKey: "AIzaSyC9cSHIMOY0qTuvuezfP72vqlm_KUJlqsk",
-      authDomain: "cryptohunt-game.firebaseapp.com",
-      projectId: "cryptohunt-game",
-      storageBucket: "cryptohunt-game.firebasestorage.app",
-      messagingSenderId: "834306593429",
-      appId: "1:834306593429:web:8a4aa5141c0640315b419c"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-    const messagesRef = db.ref('messages');
-    const usersRef = db.ref('users');
-
-    // Уникальный ID игрока
-    let userId = localStorage.getItem('userId');
-    if (!userId) {
-      userId = 'user_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('userId', userId);
+    // Опционально: используй данные пользователя
+    const user = WebApp.initDataUnsafe?.user;
+    if (user) {
+      console.log("User:", user.first_name, user.id);
     }
 
-    let balance = 0;
-    let isHunting = false;
-
-    // Загрузка баланса
-    usersRef.child(userId).once('value', (snap) => {
-      const data = snap.val();
-      balance = data?.balance || 0;
-      document.getElementById('balance').textContent = balance;
-      if (!data) usersRef.child(userId).set({ balance: 0 });
-    });
-
-    // Шифрование числа (XOR)
-    function encryptNumber(num) {
-      const str = num.toString();
-      const key = 137;
-      let out = '';
-      for (let c of str) {
-        out += (c.charCodeAt(0) ^ key) + ',';
-      }
-      return out.slice(0, -1);
-    }
-
-    // === ОТПРАВКА ЗАГАДКИ ===
-    async function createPuzzle() {
-      const input = document.getElementById('secret').value;
-      const num = parseInt(input);
-      if (isNaN(num) || num < 0 || num > 99999) {
-        alert('Введите число от 0 до 99999');
-        return;
-      }
-      const encrypted = encryptNumber(num);
-      await messagesRef.push({
-        type: 'puzzle',
-        encrypted: encrypted,
-        reward: 10,
-        by: userId,
-        timestamp: Date.now()
-      });
-    }
-
-    // === ПОИСК ЧИСЛА (с пошаговым перебором) ===
-    async function startHunt(encrypted, msgId) {
-      if (isHunting) return;
-      isHunting = true;
-
-      const key = 137;
-      const max = 99999;
-      let i = 0;
-      const batchSize = 2000; // Перебираем по 2000 чисел за раз
-
-      function encrypt(num) {
-        let s = num.toString();
-        let out = '';
-        for (let c of s) out += (c.charCodeAt(0) ^ key) + ',';
-        return out.slice(0, -1);
-      }
-
-      function searchBatch() {
-        const end = Math.min(i + batchSize, max + 1);
-        for (; i < end; i++) {
-          if (encrypt(i) === encrypted) {
-            // НАШЛИ!
-            balance += 10;
-            document.getElementById('balance').textContent = balance;
-            usersRef.child(userId).update({ balance: balance });
-            messagesRef.push({
-              type: 'win',
-              text: i.toString(),
-              originalMsg: msgId,
-              by: userId,
-              reward: 10,
-              timestamp: Date.now()
-            });
-            isHunting = false;
-            return true;
-          }
-        }
-        return false;
-      }
-
-      while (i <= max) {
-        if (searchBatch()) return;
-        await new Promise(r => setTimeout(r, 10)); // Отдаём управление
-      }
-      isHunting = false;
-    }
-
-    // === ОТОБРАЖЕНИЕ ЧАТА ===
-    function renderMessage(msg, key) {
-      const div = document.createElement('div');
-      div.className = 'msg ' + msg.type;
-      if (msg.type === 'puzzle') {
-        div.innerHTML = `🔢 <b>Новая загадка!</b> Шифр: ${msg.encrypted.substring(0, 20)}... | Награда: ${msg.reward} токенов`;
-        startHunt(msg.encrypted, key);
-      } else if (msg.type === 'win') {
-        div.innerHTML = `🎉 <b>Угадано!</b> Число: <code>${msg.text}</code> | +${msg.reward} токенов`;
-      }
-      document.getElementById('chat').appendChild(div);
-      document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
-    }
-
-    // Подключение к чату
-    messagesRef.limitToLast(20).on('child_added', (snapshot) => {
-      renderMessage(snapshot.val(), snapshot.key);
-    });
-
-    messagesRef.limitToLast(20).once('value', (snap) => {
-      document.getElementById('chat').innerHTML = '';
-      snap.forEach(child => renderMessage(child.val(), child.key));
-    });
+    // Разблокировать кнопки, скрыть спиннер и т.д.
+    WebApp.ready();
   </script>
 </body>
 </html>

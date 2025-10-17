@@ -1,35 +1,78 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width">
-  <title>CryptoHunt Chat</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CryptoHunt — Числовая охота</title>
   <style>
-    body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 10px; background: #f5f7ff; }
-    .chat { height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin: 10px 0; background: white; }
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 16px;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+    h1, h2 { margin: 16px 0; }
+    .card {
+      background: white;
+      padding: 16px;
+      border-radius: 12px;
+      margin: 16px 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    input, button {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    #chat {
+      height: 250px;
+      overflow-y: auto;
+      background: white;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
     .msg { margin: 8px 0; padding: 6px; border-radius: 6px; }
-    .puzzle { background: #e0f2fe; }
+    .puzzle { background: #dbeafe; }
     .win { background: #dcfce7; font-weight: bold; }
-    input, button, select { width: 100%; padding: 10px; margin: 5px 0; }
-    #balance { font-size: 18px; font-weight: bold; color: #2563eb; }
+    #balance { font-size: 20px; font-weight: bold; color: #2563eb; }
   </style>
 </head>
 <body>
-  <h2>🔐 CryptoHunt Chat</h2>
+  <h1>🔐 CryptoHunt</h1>
   <div>Баланс: <span id="balance">0</span> токенов</div>
 
-  <h3>Загадай ФРАЗУ (любая длина!)</h3>
-  <input id="secret" placeholder="Например: Биткоин, Hello, 🚀">
-  <button onclick="createPuzzle()">Отправить в чат</button>
+  <div class="card">
+    <h2>Загадай число (до 5 цифр)</h2>
+    <input type="number" id="secret" placeholder="Например: 12345" min="0" max="99999" />
+    <button onclick="createPuzzle()">Отправить в чат</button>
+  </div>
 
-  <h3>Чат</h3>
-  <div class="chat" id="chat"></div>
+  <div class="card">
+    <h2>Чат</h2>
+    <div id="chat">Подключение к игре...</div>
+  </div>
 
-  <!-- Firebase -->
+  <!-- Firebase SDK (compat mode) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 
   <script>
+    // === ТВОЯ FIREBASE КОНФИГУРАЦИЯ ===
     const firebaseConfig = {
       apiKey: "AIzaSyC9cSHIMOY0qTuvuezfP72vqlm_KUJlqsk",
       authDomain: "cryptohunt-game.firebaseapp.com",
@@ -38,12 +81,13 @@
       messagingSenderId: "834306593429",
       appId: "1:834306593429:web:8a4aa5141c0640315b419c"
     };
+
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
     const messagesRef = db.ref('messages');
     const usersRef = db.ref('users');
 
-    // Генерируем уникальный ID игрока
+    // Уникальный ID игрока
     let userId = localStorage.getItem('userId');
     if (!userId) {
       userId = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -53,116 +97,112 @@
     let balance = 0;
     let isHunting = false;
 
-    // Загружаем баланс
+    // Загрузка баланса
     usersRef.child(userId).once('value', (snap) => {
       const data = snap.val();
-      if (data) {
-        balance = data.balance || 0;
-      } else {
-        usersRef.child(userId).set({ name: 'Аноним', balance: 0 });
-      }
+      balance = data?.balance || 0;
       document.getElementById('balance').textContent = balance;
+      if (!data) usersRef.child(userId).set({ balance: 0 });
     });
 
-    // Простой XOR-шифр для любой строки
-    function encrypt(text) {
+    // Шифрование числа (XOR)
+    function encryptNumber(num) {
+      const str = num.toString();
       const key = 137;
-      let encrypted = '';
-      for (let i = 0; i < text.length; i++) {
-        encrypted += (text.charCodeAt(i) ^ key) + ',';
+      let out = '';
+      for (let c of str) {
+        out += (c.charCodeAt(0) ^ key) + ',';
       }
-      return encrypted.slice(0, -1); // Убираем последнюю запятую
+      return out.slice(0, -1);
     }
 
-    function decrypt(encryptedStr) {
-      const key = 137;
-      const codes = encryptedStr.split(',').map(Number);
-      let text = '';
-      for (const code of codes) {
-        text += String.fromCodePoint(code ^ key);
-      }
-      return text;
-    }
-
-    // Словарь для перебора (можно расширять)
-    const wordList = [
-      'Биткоин', 'Эфириум', 'Крипта', 'Хелло', 'Привет', 'Секрет', 'Фраза', 'Символ',
-      '🚀', '₿', '🦊', '💡', '🔥', '⚡', '🎉', '😎', '🧠', 'Hello', 'World', 'Test',
-      'Crypto', 'Hunt', 'Game', 'Win', 'Lose', 'Yes', 'No', 'Ok', 'Bye', 'Hi'
-    ];
-
+    // === ОТПРАВКА ЗАГАДКИ ===
     async function createPuzzle() {
-      const secret = document.getElementById('secret').value.trim();
-      if (!secret) {
-        alert('Введите фразу!');
+      const input = document.getElementById('secret').value;
+      const num = parseInt(input);
+      if (isNaN(num) || num < 0 || num > 99999) {
+        alert('Введите число от 0 до 99999');
         return;
       }
-      const encrypted = encrypt(secret);
-      const msg = {
+      const encrypted = encryptNumber(num);
+      await messagesRef.push({
         type: 'puzzle',
         encrypted: encrypted,
         reward: 10,
         by: userId,
         timestamp: Date.now()
-      };
-      await messagesRef.push(msg);
+      });
     }
 
-    async function trySolve(encrypted, msgId) {
+    // === ПОИСК ЧИСЛА (с пошаговым перебором) ===
+    async function startHunt(encrypted, msgId) {
       if (isHunting) return;
       isHunting = true;
 
-      const words = wordList;
-      for (const word of words) {
-        if (encrypt(word) === encrypted) {
-          // Победа!
-          balance += 10;
-          document.getElementById('balance').textContent = balance;
-          await usersRef.child(userId).update({ balance: balance });
+      const key = 137;
+      const max = 99999;
+      let i = 0;
+      const batchSize = 2000; // Перебираем по 2000 чисел за раз
 
-          await messagesRef.push({
-            type: 'win',
-            text: word,
-            originalMsg: msgId,
-            by: userId,
-            reward: 10,
-            timestamp: Date.now()
-          });
+      function encrypt(num) {
+        let s = num.toString();
+        let out = '';
+        for (let c of s) out += (c.charCodeAt(0) ^ key) + ',';
+        return out.slice(0, -1);
+      }
 
-          isHunting = false;
-          return;
+      function searchBatch() {
+        const end = Math.min(i + batchSize, max + 1);
+        for (; i < end; i++) {
+          if (encrypt(i) === encrypted) {
+            // НАШЛИ!
+            balance += 10;
+            document.getElementById('balance').textContent = balance;
+            usersRef.child(userId).update({ balance: balance });
+            messagesRef.push({
+              type: 'win',
+              text: i.toString(),
+              originalMsg: msgId,
+              by: userId,
+              reward: 10,
+              timestamp: Date.now()
+            });
+            isHunting = false;
+            return true;
+          }
         }
-        await new Promise(r => setTimeout(r, 0));
+        return false;
+      }
+
+      while (i <= max) {
+        if (searchBatch()) return;
+        await new Promise(r => setTimeout(r, 10)); // Отдаём управление
       }
       isHunting = false;
     }
 
-    // Отображение чата
+    // === ОТОБРАЖЕНИЕ ЧАТА ===
     function renderMessage(msg, key) {
       const div = document.createElement('div');
       div.className = 'msg ' + msg.type;
       if (msg.type === 'puzzle') {
-        div.innerHTML = `🔒 <b>Новая загадка!</b> Шифр: ${msg.encrypted.substring(0, 20)}... | Награда: ${msg.reward} токенов`;
-        // Автозапуск поиска
-        trySolve(msg.encrypted, key);
+        div.innerHTML = `🔢 <b>Новая загадка!</b> Шифр: ${msg.encrypted.substring(0, 20)}... | Награда: ${msg.reward} токенов`;
+        startHunt(msg.encrypted, key);
       } else if (msg.type === 'win') {
-        div.innerHTML = `🎉 <b>Расшифровано!</b> Секрет: "${msg.text}" | +${msg.reward} токенов`;
+        div.innerHTML = `🎉 <b>Угадано!</b> Число: <code>${msg.text}</code> | +${msg.reward} токенов`;
       }
       document.getElementById('chat').appendChild(div);
       document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
     }
 
-    // Слушаем чат
+    // Подключение к чату
     messagesRef.limitToLast(20).on('child_added', (snapshot) => {
       renderMessage(snapshot.val(), snapshot.key);
     });
 
-    // Загружаем последние сообщения
     messagesRef.limitToLast(20).once('value', (snap) => {
       document.getElementById('chat').innerHTML = '';
-      snap.forEach(child => {
-        renderMessage(child.val(), child.key);
-      });
+      snap.forEach(child => renderMessage(child.val(), child.key));
     });
   </script>
 </body>
